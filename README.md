@@ -2,7 +2,7 @@
 
 sse-monitor is a live system monitor that streams real-time CPU and memory metrics from a Go server to the browser using Server-Sent Events — no WebSockets, no client-side polling, no JS framework.
 
-For the wire format, the broker/fan-out pattern, and how HTMX + Alpine + Chart.js split the rendering, see the companion article: **[Streaming Real-Time Updates in Go with Server-Sent Events](#)** 
+For the wire format, the broker/fan-out pattern, and how HTMX + Alpine + Chart.js split the rendering, see the companion article: **[Streaming Real-Time Updates in Go with Server-Sent Events](https://blog.karoko.dev/streaming-real-time-updates-in-go-with-server-sent-events-836b04f0f05d)** 
 
 ## Table of Contents
 - [Project Structure](#project-structure)

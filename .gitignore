@@ -1,0 +1,18 @@
+# Dependency directories (go.sum already gives reproducible builds)
+vendor/
+
+# Compiled binaries
+sse-monitor
+*.exe
+*.test
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Go workspace file
+go.work
+go.work.sum

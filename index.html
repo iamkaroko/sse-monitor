@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>SSE Monitor</title>
+    <link rel="stylesheet" href="styles.css"/>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="top-bar">
+        <span class="top-bar-title">System Monitor</span>
+        <span class="live-badge">
+        <span class="live-dot"></span>
+        live, updates every 1s
+      </span>
+    </div>
+
+    <div class="dashboard" hx-ext="sse" sse-connect="/events">
+        <!-- Not dead markup: HTMX only listens for a named SSE event if some
+             element declares sse-swap for it, so this is what makes the
+             graph event get forwarded at all (see the bridge script below). -->
+        <div sse-swap="graph" style="display:none"></div>
+        <div class="stat-grid">
+            <div class="stat-card" sse-swap="mem-card">
+                <div class="stat-label">Mem used</div>
+                <div class="stat-value">...</div>
+            </div>
+
+            <div class="stat-card" sse-swap="cpu-card">
+                <div class="stat-label">CPU user</div>
+                <div class="stat-value">...</div>
+            </div>
+
+            <div class="stat-card"
+                 x-data="cpuIdleCard()"
+                 x-init="init()"
+                 @sse-graph.window="update($event.detail)">
+                <div class="stat-label">CPU idle</div>
+                <div class="stat-value" x-text="idle + '%'">...</div>
+                <div class="stat-sub" x-text="status"></div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Transport</div>
+                <div class="stat-value" style="font-size:1rem;color:#3fb950;">SSE</div>
+                <div class="stat-sub">plain HTTP</div>
+            </div>
+        </div>
+        <div class="graph-card"
+             x-data="graphComponent()"
+             x-init="init()"
+             @sse-graph.window="push($event.detail)">
+            <div class="graph-header">
+                <span class="graph-title">60-second history</span>
+                <div class="graph-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#58a6ff;"></div>Memory %
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#3fb950;"></div>CPU %
+                    </div>
+                </div>
+            </div>
+
+            <div class="graph-canvas-wrap">
+                <canvas id="graph-canvas"></canvas>
+            </div>
+
+            <div class="axis-labels">
+                <span class="axis-label">60s ago</span>
+                <span class="axis-label">45s</span>
+                <span class="axis-label">30s</span>
+                <span class="axis-label">15s</span>
+                <span class="axis-label">now</span>
+            </div>
+        </div>
+
+        <div class="detail-grid">
+
+            <div class="detail-card">
+                <div class="detail-header">Memory breakdown</div>
+                <div sse-swap="mem-detail">
+                    <div class="detail-row"><span class="detail-key">Waiting...</span></div>
+                </div>
+            </div>
+
+            <div class="detail-card">
+                <div class="detail-header">CPU breakdown</div>
+                <div sse-swap="cpu-detail">
+                    <div class="detail-row"><span class="detail-key">Waiting...</span></div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        function graphComponent() {
+            const MAX = 60;
+            let chart = null;
+
+            return {
+                init() {
+                    this.$nextTick(() => {
+                        const canvas = document.getElementById('graph-canvas');
+                        if (!canvas) return;
+                        const ctx = canvas.getContext('2d');
+
+                        if (chart) {
+                            chart.destroy();
+                            chart = null;
+                        }
+
+                        chart = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: Array(MAX).fill(''),
+                                datasets: [
+                                    {
+                                        label: 'Memory %',
+                                        data: Array(MAX).fill(null),
+                                        borderColor: '#58a6ff',
+                                        backgroundColor: 'rgba(88,166,255,0.07)',
+                                        borderWidth: 1.5, pointRadius: 0, tension: 0.4,
+                                        fill: true, spanGaps: false,
+                                    },
+                                    {
+                                        label: 'CPU %',
+                                        data: Array(MAX).fill(null),
+                                        borderColor: '#3fb950',
+                                        backgroundColor: 'rgba(63,185,80,0.07)',
+                                        borderWidth: 1.5, pointRadius: 0, tension: 0.4,
+                                        fill: true, spanGaps: false,
+                                    },
+                                ],
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                animation: { duration: 200 },
+                                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                                scales: {
+                                    x: { display: false },
+                                    y: {
+                                        min: 0, max: 100,
+                                        grid: { color: 'rgba(255,255,255,0.05)' },
+                                        ticks: {
+                                            color: '#444',
+                                            font: { size: 10, family: 'Courier New' },
+                                            callback: v => v + '%',
+                                            maxTicksLimit: 5,
+                                        },
+                                        border: { display: false },
+                                    },
+                                },
+                            },
+                        });
+                    });
+                },
+
+                push(detail) {
+                    if (!chart) return;
+                    let point;
+                    try { point = JSON.parse(detail.data ?? detail); }
+                    catch { return; }
+
+                    const memSeries = chart.data.datasets[0].data;
+                    const cpuSeries = chart.data.datasets[1].data;
+
+                    memSeries.push(parseFloat(point.mem.toFixed(1)));
+                    cpuSeries.push(parseFloat(point.cpu.toFixed(1)));
+
+                    if (memSeries.length > MAX) memSeries.shift();
+                    if (cpuSeries.length > MAX) cpuSeries.shift();
+
+                    // 'none' skips the transition - at 1 update/sec a running
+                    // animation creates a permanent lag tail
+                    chart.update('none');
+                },
+            };
+        }
+
+        function cpuIdleCard() {
+            return {
+                idle: '...',
+                status: '',
+                init() {},
+                update(detail) {
+                    let point;
+                    try { point = JSON.parse(detail.data ?? detail); }
+                    catch { return; }
+                    const val   = Math.round(100 - point.cpu);
+                    this.idle   = val;
+                    this.status = val > 70 ? 'healthy' : val > 40 ? 'moderate' : 'busy';
+                },
+            };
+        }
+
+        // HTMX fires SSE events on the element, not on the window.
+        // Alpine's @event.window only catches window events.
+        // This bridge forwards the graph event so Alpine can receive it.
+        document.body.addEventListener('htmx:sseMessage', function (e) {
+            if (e.detail.type === 'graph') {
+                window.dispatchEvent(new CustomEvent('sse-graph', { detail: e.detail }));
+            }
+        });
+    </script>
+
+</body>
+</html>
